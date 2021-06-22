@@ -1,0 +1,33 @@
+a: 100;
+y: (sqrt(2)/2)/((2500 - (a+1)*t)**0.25);
+f: y**5;
+g: a*y**5;
+ode: diff(y, t, 1) - f - g;
+
+/* Create functions for Taylor series expansions */
+taylor5(func, x, h):= func + diff(func, x, 1)*h + diff(func, x, 2)*h**2/2 + diff(func, x, 3)*h**3/6 + diff(func, x, 4)*h**4/24 + diff(func, x, 5)*h**5/120;
+taylor4(func, x, h):= func + diff(func, x, 1)*h + diff(func, x, 2)*h**2/2 + diff(func, x, 3)*h**3/6 + diff(func, x, 4)*h**4/24;
+taylor3(func, x, h):= func + diff(func, x, 1)*h + diff(func, x, 2)*h**2/2 + diff(func, x, 3)*h**3/6;
+taylor2(func, x, h):= func + diff(func, x, 1)*h + diff(func, x, 2)*h**2/2;
+taylor1(func, x, h):= func + diff(func, x, 1)*h;
+
+/* SBDF 1 , SR = 2 */
+sbdf_1_lhs: taylor1(y, t, h) - y;
+sbdf_1_rhs: h*(f + taylor1(g, t, h));
+y_tilde: y + h*(f + taylor1(g, t, h));
+y_ss_1: y + (1/2)*h*(f + g);
+y_ss_2:  y_ss_1 + (1/2)*h*(y_ss_1**5 + (1/2)*a*y_tilde**5 + (1/2)*g);
+sbdf_1_rhs_2: h*(y_ss_2**5 + taylor1(g, t, h));
+
+/* SBDF 1 , SR = 3 */
+y_ss_1_sr3: y + (1/3)*h*(f + g);
+y_ss_2_sr3:  y_ss_1_sr3 + (1/3)*h*(y_ss_1_sr3**5 + (1/3)*a*y_tilde**5 + (2/3)*g);
+y_ss_3_sr3:  y_ss_2_sr3 + (1/3)*h*(y_ss_2_sr3**5 + (2/3)*a*y_tilde**5 + (1/3)*g);
+sbdf_1_rhs_3: h*(y_ss_3_sr3**5 + taylor1(g, t, h));
+
+expr: sbdf_1_lhs - sbdf_1_rhs;
+expr_sr2: sbdf_1_lhs - sbdf_1_rhs_2;
+expr_sr3: sbdf_1_lhs - sbdf_1_rhs_3;
+float(expand(subst(1, t, expr)));
+float(expand(subst(1, t, expr_sr2)));
+float(expand(subst(1, t, expr_sr3)));
