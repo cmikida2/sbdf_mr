@@ -217,8 +217,8 @@ def main():
             if r_good < rs_max[ith]:
                 rs_max[ith] = r_good
 
-    reals_std = np.loadtxt("reals_{}.txt".format(order))
-    imags_std = np.loadtxt("imags_{}.txt".format(order))
+    reals_std = np.loadtxt("explicit/reals_{}.txt".format(order))
+    imags_std = np.loadtxt("explicit/imags_{}.txt".format(order))
     # Now we need to use the expression from Verwer
     # to determine the actual stability region.
     reals = np.real(rs_max*np.exp(1j*thetas))

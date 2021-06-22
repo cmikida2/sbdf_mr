@@ -235,8 +235,8 @@ def main():
     reals = np.real(rs*np.exp(1j*thetas))
     imags = np.imag(rs*np.exp(1j*thetas))
     # Save this data to a file.
-    np.savetxt("reals_{}.txt".format(order), reals)
-    np.savetxt("imags_{}.txt".format(order), imags)
+    np.savetxt("explicit/reals_{}.txt".format(order), reals)
+    np.savetxt("explicit/imags_{}.txt".format(order), imags)
 
     import matplotlib.pyplot as plt
     plt.clf()

@@ -217,8 +217,8 @@ def main():
     rs_mu = [0]
 
     # Set up plotting
-    reals_std = np.loadtxt("reals_{}.txt".format(order))
-    imags_std = np.loadtxt("imags_{}.txt".format(order))
+    reals_std = np.loadtxt("explicit/reals_{}.txt".format(order))
+    imags_std = np.loadtxt("explicit/imags_{}.txt".format(order))
     import matplotlib.pyplot as plt
     plt.clf()
 
