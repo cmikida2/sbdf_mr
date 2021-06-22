@@ -225,10 +225,18 @@ def main():
             crit2 = abs((-b - np.sqrt(b**2 - 4*a*c)) / (2*a))
             print("Max Stability Criterion Value: ", max(crit1, crit2))
             crits.append(max(crit1, crit2))
-        else:
+        elif order == 3:
             # Order 3 has a very complicated polynomial
             crit = max(abs(np.roots([11/6 - mu, -3*(lbda + 1),
                                      3*(lbda + 1/2), -(lbda + 1/3)])))
+            print("Max Stability Criterion Value: ", crit)
+            crits.append(crit)
+        else:
+            # Order 4 has a very complicated polynomial
+            crit = max(abs(np.roots([1 - (12/25)*mu, -(48/25)*(lbda + 1),
+                                     (36/25)*(2*lbda + 1),
+                                     -(16/25)*(3*lbda + 1),
+                                     (3/25)*(4*lbda + 1)])))
             print("Max Stability Criterion Value: ", crit)
             crits.append(crit)
 
