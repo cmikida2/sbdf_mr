@@ -50,18 +50,12 @@ def nonstiff_extrap(y, h, t, lbda, mu, rhsns_hist, state_hist, order,
     if rhs_extrap is False:
         # Option 1: use "prediction" value in BDF.
         if order == 1:
-            # y_new = 2*state_hist[0] - state_hist[1]
             y_new = state_hist[0]
         elif order == 2:
-            # y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
             y_new = 2*state_hist[0] - state_hist[1]
         elif order == 3:
-            # y_new = 4*state_hist[0] - 6*state_hist[1] + \
-            #         4*state_hist[2] - state_hist[3]
             y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
         else:
-            # y_new = 5*state_hist[0] - 10*state_hist[1] + \
-            #         10*state_hist[2] - 5*state_hist[3] + state_hist[4]
             y_new = 4*state_hist[0] - 6*state_hist[1] + \
                     4*state_hist[2] - state_hist[3]
 
@@ -122,14 +116,13 @@ def main():
     t_start = 0
     t_end = 100
     dt = 1
-    order = 1
+    order = 4
 
     n_thetas = 100
     # root locus: loop through theta.
     thetas = np.linspace(-np.pi, np.pi, n_thetas)
     theta_mu = -np.pi
-    # rs_mu = [0.01, 0.1, 1, 10, 100]
-    rs_mu = [0]
+    rs_mu = [0.01, 0.1, 1, 10, 100]
     rs_max = []
     for _i in range(0, n_thetas):
         rs_max.append(1000)
@@ -170,6 +163,7 @@ def main():
                 rhsns_hist[0] = nonstiff(y_old, lbda)
                 state_hist[0] = y_old
                 tiny = 1e-15
+                fail = False
                 while t < t_end - tiny:
                     if step < order:
                         # "Bootstrap" using known exact solution.
@@ -197,9 +191,11 @@ def main():
                     times.append(t)
                     y_old = y
                     step += 1
-                # FIXME: is this criterion any good?
-                # if abs(states[-1]) > 1.0:
-                if abs(states[-1]/states[-2]) > 1.0:
+                    # New: match Leap's stopping criterion
+                    if abs(states[-1]) > 2:
+                        fail = True
+                        break
+                if fail:
                     # Failed - decrease r.
                     dr = r - (r_bad + r_good)/2
                     cand = (r_bad + r_good)/2
@@ -211,8 +207,6 @@ def main():
                     cand = (r_bad + r_good)/2
                     r_good = r
                     r = cand
-                # if r > 2**8:
-                #     break
 
             if r_good < rs_max[ith]:
                 rs_max[ith] = r_good

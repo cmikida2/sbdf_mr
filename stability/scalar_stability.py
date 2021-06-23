@@ -125,11 +125,11 @@ def main():
     order = 1
     # Modify this to see what effect stiffness has on
     # the stability of the explicit part of the SBDF.
-    # mu = -5
     mu = 0
 
     # root locus: loop through theta.
-    thetas = np.linspace(-np.pi, np.pi, 500)
+    # thetas = np.linspace(-np.pi, np.pi, 500)
+    thetas = np.linspace(-np.pi, np.pi, 50)
     rs = []
     crits = []
 
@@ -143,7 +143,7 @@ def main():
         r_good = 0
         r_bad = 100
         dr = 100
-        while abs(dr) > 0.00001:
+        while abs(dr) > 0.000001:
 
             lbda = r*np.exp(theta*1j)
             y_old = 1
@@ -160,10 +160,11 @@ def main():
             rhs_hist = np.empty((order), dtype=complex)
             rhsns_hist = np.empty((order), dtype=complex)
             state_hist = np.empty((order+1), dtype=complex)
-            rhs_hist[0] = (stiff(y_old, mu) + nonstiff(y_old, lbda))
+            rhs_hist[0] = nonstiff(y_old, lbda) + stiff(y_old, mu)
             rhsns_hist[0] = nonstiff(y_old, lbda)
             state_hist[0] = y_old
             tiny = 1e-15
+            fail = False
             while t < t_end - tiny:
                 if step < order:
                     # "Bootstrap" using known exact solution.
@@ -171,8 +172,6 @@ def main():
                     dy_ns = nonstiff(y, lbda)
                     dy_full = dy_ns + stiff(y, mu)
                 else:
-                    # y, dy_ns, dy_full = adams_bashforth(y_old, dt, lbda,
-                    #                                     order, rhsns_hist)
                     y, dy_ns, dy_full = imex_bdf(y_old, dt, t, lbda, mu,
                                                  state_hist,
                                                  rhs_hist,
@@ -193,7 +192,11 @@ def main():
                 times.append(t)
                 y_old = y
                 step += 1
-            if abs(states[-1]/states[-2]) > 1.0:
+                # New: match Leap's stopping criterion
+                if abs(states[-1]) > 2:
+                    fail = True
+                    break
+            if fail:
                 # Failed - decrease r.
                 dr = r - (r_bad + r_good)/2
                 cand = (r_bad + r_good)/2
@@ -243,8 +246,11 @@ def main():
     reals = np.real(rs*np.exp(1j*thetas))
     imags = np.imag(rs*np.exp(1j*thetas))
     # Save this data to a file.
-    np.savetxt("explicit/reals_{}.txt".format(order), reals)
-    np.savetxt("explicit/imags_{}.txt".format(order), imags)
+    # np.savetxt("explicit/reals_{}.txt".format(order), reals)
+    # np.savetxt("explicit/imags_{}.txt".format(order), imags)
+
+    np.savetxt("explicit/rs_{}.txt".format(order), rs)
+    np.savetxt("explicit/thetas_{}.txt".format(order), thetas)
 
     import matplotlib.pyplot as plt
     plt.clf()

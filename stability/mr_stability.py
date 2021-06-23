@@ -209,11 +209,10 @@ def main():
     order = 1
     srs = [1, 2, 3, 4, 5]
 
-    n_thetas = 100
+    n_thetas = 500
     # root locus: loop through theta.
     thetas = np.linspace(-np.pi, np.pi, n_thetas)
     theta_mu = -np.pi
-    # rs_mu = [0.01, 0.1, 1, 10, 100]
     rs_mu = [0]
 
     # Set up plotting
@@ -225,6 +224,8 @@ def main():
     # Now, calculate the stability bound for a
     # single part of the IMEX scheme.
     for sr in srs:
+        print("========================================")
+        print("SR = ", sr)
         rs_max = []
         for _i in range(0, n_thetas):
             rs_max.append(1000)
@@ -238,8 +239,8 @@ def main():
                 # for now via simple bisection.
                 r = 2
                 r_good = 0
-                r_bad = 110
-                dr = 110
+                r_bad = 10
+                dr = 10
                 while abs(dr) > 0.00001:
 
                     lbda = r*np.exp(theta*1j)
@@ -257,16 +258,19 @@ def main():
                     rhs_hist = np.empty((order), dtype=complex)
                     rhsns_hist = np.empty((order), dtype=complex)
                     state_hist = np.empty((order+1), dtype=complex)
-                    rhs_hist[0] = (stiff(y_old, mu) + nonstiff(y_old, lbda))
+                    # rhs_hist[0] = (stiff(y_old, mu) + nonstiff(y_old, lbda))
+                    rhs_hist[0] = stiff(y_old, mu)
                     rhsns_hist[0] = nonstiff(y_old, lbda)
                     state_hist[0] = y_old
                     tiny = 1e-15
+                    fail = False
                     while t < t_end - tiny:
                         if step < order:
                             # "Bootstrap" using known exact solution.
                             y = exact(t + dt, mu, lbda)
                             dy_ns = nonstiff(y, lbda)
-                            dy_full = dy_ns + stiff(y, mu)
+                            # dy_full = dy_ns + stiff(y, mu)
+                            dy_full = stiff(y, mu)
                         else:
                             y, dy_ns, dy_full = imex_bdf(y_old, dt, t, lbda,
                                                          mu, state_hist,
@@ -288,8 +292,11 @@ def main():
                         times.append(t)
                         y_old = y
                         step += 1
-                    if abs(states[-1]/states[-2]) > 1.0 or np.isnan(
-                            abs(states[-1])):
+                        # New: match Leap's stopping criterion
+                        if abs(states[-1]) > 2:
+                            fail = True
+                            break
+                    if fail:
                         # Failed - decrease r.
                         dr = r - (r_bad + r_good)/2
                         cand = (r_bad + r_good)/2
@@ -310,11 +317,10 @@ def main():
         plt.plot(reals, imags, label="SR={}".format(sr))
 
     plt.plot(reals_std, imags_std, 'g--', label="Single-Rate Region")
-    plt.title("Explicit Stability Search, Order {order}".format(
+    plt.title("Multi-Rate Explicit Stability Search, Order {order}".format(
         order=order))
     plt.legend()
     plt.show()
-    # plt.savefig("second_order_rflow.png")
 
 
 if __name__ == "__main__":

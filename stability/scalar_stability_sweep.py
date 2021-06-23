@@ -50,18 +50,12 @@ def nonstiff_extrap(y, h, t, lbda, mu, rhsns_hist, state_hist, order,
     if rhs_extrap is False:
         # Option 1: use "prediction" value in BDF.
         if order == 1:
-            # y_new = 2*state_hist[0] - state_hist[1]
             y_new = state_hist[0]
         elif order == 2:
-            # y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
             y_new = 2*state_hist[0] - state_hist[1]
         elif order == 3:
-            # y_new = 4*state_hist[0] - 6*state_hist[1] + \
-            #         4*state_hist[2] - state_hist[3]
             y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
         else:
-            # y_new = 5*state_hist[0] - 10*state_hist[1] + \
-            #         10*state_hist[2] - 5*state_hist[3] + state_hist[4]
             y_new = 4*state_hist[0] - 6*state_hist[1] + \
                     4*state_hist[2] - state_hist[3]
 
@@ -122,16 +116,17 @@ def main():
     t_start = 0
     t_end = 100
     dt = 1
-    order = 1
+    order = 4
 
     n_thetas = 100
     n_thetas_mu = 50
     # root locus: loop through theta.
     thetas = np.linspace(-np.pi, np.pi, n_thetas)
     thetas_mu = np.linspace(-np.pi/2, -3*np.pi/2, n_thetas_mu)
-    rs_mu = [0.01, 0.1, 1, 10, 100]
-    # Avoid non-A-stable r-range for third order.
+    # rs_mu = [0.01, 0.1, 1, 10, 100]
+    # Avoid non-A-stable r-range for third, fourth order.
     # rs_mu = [0.01, 0.1, 3, 10, 100]
+    rs_mu = [0.01, 0.1, 6, 10, 100]
     rs_max = []
     for _i in range(0, n_thetas):
         rs_max.append(1000)
@@ -169,16 +164,17 @@ def main():
                     rhs_hist = np.empty((order), dtype=complex)
                     rhsns_hist = np.empty((order), dtype=complex)
                     state_hist = np.empty((order+1), dtype=complex)
-                    rhs_hist[0] = (stiff(y_old, mu) + nonstiff(y_old, lbda))
+                    rhs_hist[0] = nonstiff(y_old, lbda) + stiff(y_old, mu)
                     rhsns_hist[0] = nonstiff(y_old, lbda)
                     state_hist[0] = y_old
                     tiny = 1e-15
+                    fail = False
                     while t < t_end - tiny:
                         if step < order:
                             # "Bootstrap" using known exact solution.
                             y = exact(t + dt, mu, lbda)
                             dy_ns = nonstiff(y, lbda)
-                            dy_full = dy_ns + stiff(y, mu)
+                            dy_full = nonstiff(y, lbda) + stiff(y, mu)
                         else:
                             y, dy_ns, dy_full = imex_bdf(y_old, dt, t, lbda,
                                                          mu, state_hist,
@@ -200,7 +196,11 @@ def main():
                         times.append(t)
                         y_old = y
                         step += 1
-                    if abs(states[-1]/states[-2]) > 1.0:
+                        # New: match Leap's stopping criterion
+                        if abs(states[-1]) > 2:
+                            fail = True
+                            break
+                    if fail:
                         # Failed - decrease r.
                         dr = r - (r_bad + r_good)/2
                         cand = (r_bad + r_good)/2
@@ -220,8 +220,6 @@ def main():
 
     reals_std = np.loadtxt("explicit/reals_{}.txt".format(order))
     imags_std = np.loadtxt("explicit/imags_{}.txt".format(order))
-    # Now we need to use the expression from Verwer
-    # to determine the actual stability region.
     reals = np.real(rs_max*np.exp(1j*thetas))
     imags = np.imag(rs_max*np.exp(1j*thetas))
     import matplotlib.pyplot as plt
@@ -231,7 +229,6 @@ def main():
     plt.title("A-Stability Search, Order {}".format(order))
     plt.legend(["A-Stability Region", "Explicit Stability Region"])
     plt.show()
-    # plt.savefig("first_order_sweep.png")
 
 
 if __name__ == "__main__":
