@@ -1,0 +1,27 @@
+depends(y, t);
+depends([f, g], [y, t]);
+ode: diff(y(t), t, 1) - f(y(t), t) - g(y(t), t);
+ode_tn: at(diff(y(t), t, 1), t=t_n) - f(y(t_n), t_n) - g(y(t_n), t_n);
+
+/* SBDF 1 */
+sbdf_1_lhs: taylor(y(t), t, t_n, 1) - y(t_n);
+sbdf_1_rhs: h*(f(y(t_n), t_n) + taylor(g(y(t), t), t, t_n, 1));
+
+/* SBDF 1 , SR = 2 */
+y_tilde: y(t_n) + h*(f(y(t_n), t_n) + taylor(g(y(t), t), t, t_n, 1));
+y_ss_1: y(t_n) + (1/2)*h*(f(y(t_n), t_n) + g(y(t_n), t_n));
+y_ss_2:  y_ss_1 + (1/2)*h*(f(y_ss_1, t_n + (1/2)*h) + (1/2)*g(y_tilde, t_n + h) + (1/2)*g(y(t_n), t_n));
+sbdf_1_rhs_2: h*(f(y_ss_2, t_n + h) + taylor(g(y(t), t), t, t_n, 1));
+
+/* SBDF 1 , SR = 3 */
+y_ss_1_sr3: y(t_n) + (1/3)*h*(f(y(t_n), t_n) + g(y(t_n), t_n));
+y_ss_2_sr3:  y_ss_1_sr3 + (1/3)*h*(f(y_ss_1_sr3, t_n + (1/3)*h) + (1/3)*g(y_tilde, t_n + h) + (2/3)*g(y(t_n), t_n));
+y_ss_3_sr3:  y_ss_2_sr3 + (1/3)*h*(f(y_ss_2_sr3, t_n + (2/3)*h) + (2/3)*g(y_tilde, t_n + h) + (1/3)*g(y(t_n), t_n));
+sbdf_1_rhs_3: h*(f(y_ss_3_sr3, t_n + h) + taylor(g(y(t), t), t, t_n, 1));
+
+expr: sbdf_1_lhs - sbdf_1_rhs;
+expr_sr2: sbdf_1_lhs - sbdf_1_rhs_2;
+expr_sr3: sbdf_1_lhs - sbdf_1_rhs_3;
+expand(subst(h, t - t_n, expr) - h*ode_tn);
+expand(subst(h, t - t_n, expr_sr2));
+expand(subst(h, t - t_n, expr_sr3));
