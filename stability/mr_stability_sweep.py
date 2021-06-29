@@ -228,8 +228,8 @@ def main():
     t_start = 0
     t_end = 100
     dt = 1
-    order = 4
-    srs = [1, 2, 3, 4, 5]
+    order = 1
+    sr = 2
 
     # Set ratio criteria - order 4 is persnickety
     if order < 4:
@@ -238,41 +238,41 @@ def main():
         ratio_threshold = 3
 
     n_thetas = 500
+    n_thetas_mu = 50
     # root locus: loop through theta.
     thetas = np.linspace(-np.pi, np.pi, n_thetas)
-    theta_mu = -np.pi
-    rs_mu = [0]
+    thetas_mu = np.linspace(-np.pi/2, -3*np.pi/2, n_thetas_mu)
+    rs_mu = [0.01, 0.1, 1, 10, 100]
 
-    # Set up plotting
-    reals_std = np.loadtxt("explicit/reals_{}.txt".format(order))
-    imags_std = np.loadtxt("explicit/imags_{}.txt".format(order))
     import matplotlib.pyplot as plt
     plt.clf()
 
     # Now, calculate the stability bound for a
     # single part of the IMEX scheme.
-    for sr in srs:
-        print("========================================")
-        print("SR = ", sr)
-        rs_max = []
-        for _i in range(0, n_thetas):
-            rs_max.append(1000)
-        for r_mu in rs_mu:
+    rs_max = []
+    # Set up plotting
+    reals_std = np.loadtxt("mr_explicit_regions/reals_{o}_{s}.txt".format(
+        o=order, s=sr))
+    imags_std = np.loadtxt("mr_explicit_regions/imags_{o}_{s}.txt".format(
+        o=order, s=sr))
+    for _i in range(0, n_thetas):
+        rs_max.append(1000)
+    for r_mu in rs_mu:
+        print("RMU = ", r_mu)
+        for theta_mu in thetas_mu:
+            print("TMU = ", theta_mu)
             mu = r_mu*np.exp(theta_mu*1j)
             # We will be finding the minimum (limiting)
             # lambdas for all mus in the left half plane.
             for ith, theta in enumerate(thetas):
 
-                print("Theta = ", theta)
                 # Find stability boundary iteratively,
                 # for now via simple bisection.
-                # r = 2
                 r = 0
                 r_good = 0
                 r_bad = 10
                 dr = 10
                 while abs(dr) > 0.00001:
-
                     lbda = r*np.exp(theta*1j)
                     y_old = 1
 
@@ -288,7 +288,7 @@ def main():
                     rhs_hist = np.empty(order, dtype=complex)
                     rhsns_hist = np.empty(order, dtype=complex)
                     state_hist = np.empty(order, dtype=complex)
-                    time_hist = np.empty(order, dtype=complex)
+                    time_hist = np.empty(order)
                     # rhs_hist[0] = (stiff(y_old, mu) + nonstiff(y_old, lbda))
                     rhs_hist[0] = stiff(y_old, mu)
                     rhsns_hist[0] = nonstiff(y_old, lbda)
@@ -302,11 +302,6 @@ def main():
                         crit = 1.0 + 1e-10
                     else:
                         crit = 1.0
-                    # if np.real(lbda) > 0:
-                    #     # We need a different ratio criteria here - if
-                    #     # lambda is positive, the state will of course
-                    #     # increase in magnitude.
-                    #     crit = 1.5
                     while t < t_end - tiny:
                         if step < order - 1:
                             # "Bootstrap" using known exact solution.
@@ -344,9 +339,6 @@ def main():
                         if ratio_counter > ratio_threshold:
                             fail = True
                             break
-                        # if abs(states[-1]) > 2.0:
-                        #     fail = True
-                        #     break
                     # if fail:
                     #     # Failed - decrease r.
                     #     dr = r - (r_bad + r_good)/2
@@ -359,35 +351,25 @@ def main():
                     #     cand = (r_bad + r_good)/2
                     #     r_good = r
                     #     r = cand
-                    # AVOID BISECTION
                     if fail:
                         dr = 0
                     else:
-                        # Success: increase r.
+                        r_good = r
                         r += 0.01
 
-                # if r_good < rs_max[ith]:
-                #     rs_max[ith] = r_good
-                if r < rs_max[ith]:
-                    rs_max[ith] = r
-                    print("r = ", r)
+                if r_good < rs_max[ith]:
+                    rs_max[ith] = r_good
 
-        reals = np.real(rs_max*np.exp(1j*thetas))
-        imags = np.imag(rs_max*np.exp(1j*thetas))
-        # Save this data to a file.
-        np.savetxt("mr_explicit_regions/reals_{o}_{s}.txt".format(
-            o=order, s=sr), reals)
-        np.savetxt("mr_explicit_regions/imags_{o}_{s}.txt".format(
-            o=order, s=sr), imags)
-        plt.plot(reals, imags, label="SR={}".format(sr))
+    reals = np.real(rs_max*np.exp(1j*thetas))
+    imags = np.imag(rs_max*np.exp(1j*thetas))
+    plt.plot(reals, imags, label="SR={}, A-Stable".format(sr))
+    plt.plot(reals_std, imags_std, label="SR={}, Explicit".format(sr))
 
-    plt.plot(reals_std, imags_std, 'g--', label="Single-Rate Region")
-    plt.title("Multi-Rate Explicit Stability Search, Order {order}".format(
-        order=order))
+    plt.title("Multi-Rate A-Stability Search, Order={order}, SR={sr}".format(
+        order=order, sr=sr))
     plt.legend()
     # plt.show()
-    plt.savefig("mr_explicit_regions/mr_{order}_{sr}.png".format(order=order,
-                                                                 sr=sr))
+    plt.savefig("mr_{order}_{sr}_sweep.png".format(order=order, sr=sr))
 
 
 if __name__ == "__main__":

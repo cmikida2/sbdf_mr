@@ -118,6 +118,12 @@ def main():
     dt = 1
     order = 4
 
+    # Set ratio criteria - order 4 is persnickety
+    if order < 4:
+        ratio_threshold = 9
+    else:
+        ratio_threshold = 3
+
     n_thetas = 100
     # root locus: loop through theta.
     thetas = np.linspace(-np.pi, np.pi, n_thetas)
@@ -164,6 +170,8 @@ def main():
                 state_hist[0] = y_old
                 tiny = 1e-15
                 fail = False
+                ratio = 0
+                ratio_counter = 0
                 while t < t_end - tiny:
                     if step < order:
                         # "Bootstrap" using known exact solution.
@@ -191,8 +199,12 @@ def main():
                     times.append(t)
                     y_old = y
                     step += 1
-                    # New: match Leap's stopping criterion
-                    if abs(states[-1]) > 2:
+                    ratio = abs(states[-1]/states[-2])
+                    if ratio > 1.0:
+                        ratio_counter += 1
+                    else:
+                        ratio_counter = 0
+                    if ratio_counter > ratio_threshold:
                         fail = True
                         break
                 if fail:

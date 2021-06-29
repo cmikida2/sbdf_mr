@@ -50,18 +50,12 @@ def nonstiff_extrap(y, h, t, lbda, mu, rhsns_hist, state_hist, order,
     if rhs_extrap is False:
         # Option 1: use "prediction" value in BDF.
         if order == 1:
-            # y_new = 2*state_hist[0] - state_hist[1]
             y_new = state_hist[0]
         elif order == 2:
-            # y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
             y_new = 2*state_hist[0] - state_hist[1]
         elif order == 3:
-            # y_new = 4*state_hist[0] - 6*state_hist[1] + \
-            #         4*state_hist[2] - state_hist[3]
             y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
         else:
-            # y_new = 5*state_hist[0] - 10*state_hist[1] + \
-            #         10*state_hist[2] - 5*state_hist[3] + state_hist[4]
             y_new = 4*state_hist[0] - 6*state_hist[1] + \
                     4*state_hist[2] - state_hist[3]
 
@@ -122,14 +116,20 @@ def main():
     t_start = 0
     t_end = 100
     dt = 1
-    order = 1
+    order = 4
     # Modify this to see what effect stiffness has on
     # the stability of the explicit part of the SBDF.
     mu = 0
 
+    # Set ratio criteria - order 4 is persnickety
+    if order < 4:
+        ratio_threshold = 9
+    else:
+        ratio_threshold = 3
+
     # root locus: loop through theta.
-    # thetas = np.linspace(-np.pi, np.pi, 500)
-    thetas = np.linspace(-np.pi, np.pi, 50)
+    thetas = np.linspace(-np.pi, np.pi, 500)
+    # thetas = np.linspace(-np.pi, np.pi, 50)
     rs = []
     crits = []
 
@@ -159,14 +159,16 @@ def main():
             step = 0
             rhs_hist = np.empty((order), dtype=complex)
             rhsns_hist = np.empty((order), dtype=complex)
-            state_hist = np.empty((order+1), dtype=complex)
+            state_hist = np.empty((order), dtype=complex)
             rhs_hist[0] = nonstiff(y_old, lbda) + stiff(y_old, mu)
             rhsns_hist[0] = nonstiff(y_old, lbda)
             state_hist[0] = y_old
             tiny = 1e-15
             fail = False
+            ratio = 0
+            ratio_counter = 0
             while t < t_end - tiny:
-                if step < order:
+                if step < order - 1:
                     # "Bootstrap" using known exact solution.
                     y = exact(t + dt, mu, lbda)
                     dy_ns = nonstiff(y, lbda)
@@ -181,27 +183,32 @@ def main():
                 for i in range(order-1, 0, -1):
                     rhs_hist[i] = rhs_hist[i-1]
                     rhsns_hist[i] = rhsns_hist[i-1]
-                for i in range(order, 0, -1):
                     state_hist[i] = state_hist[i-1]
                 rhs_hist[0] = dy_full
                 rhsns_hist[0] = dy_ns
                 state_hist[0] = y
                 # Append to states and prepare for next step.
                 states.append(y)
+                exact_states.append(exact(t + dt, mu, lbda))
                 t += dt
                 times.append(t)
                 y_old = y
-                step += 1
-                # New: match Leap's stopping criterion
-                if abs(states[-1]) > 2:
+                ratio = abs(states[-1]/states[-2])
+                if ratio > 1.0:
+                    ratio_counter += 1
+                else:
+                    ratio_counter = 0
+                if ratio_counter > ratio_threshold:
                     fail = True
                     break
+                step += 1
             if fail:
                 # Failed - decrease r.
                 dr = r - (r_bad + r_good)/2
                 cand = (r_bad + r_good)/2
                 r_bad = r
                 r = cand
+                # print("Radius failed")
             else:
                 # Success: increase r.
                 dr = r - (r_bad + r_good)/2
@@ -249,8 +256,8 @@ def main():
     # np.savetxt("explicit/reals_{}.txt".format(order), reals)
     # np.savetxt("explicit/imags_{}.txt".format(order), imags)
 
-    np.savetxt("explicit/rs_{}.txt".format(order), rs)
-    np.savetxt("explicit/thetas_{}.txt".format(order), thetas)
+    # np.savetxt("explicit/rs_{}.txt".format(order), rs)
+    # np.savetxt("explicit/thetas_{}.txt".format(order), thetas)
 
     import matplotlib.pyplot as plt
     plt.clf()

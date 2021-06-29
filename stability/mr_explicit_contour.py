@@ -3,15 +3,17 @@ import numpy as np
 
 def main():
 
-    # Determining max(z) contours for each order
-    order = 4
+    # Determining max(z) contours for each SR in first
+    # order MR.
+    order = 1
+    sr = 5
     # Modify this to see what effect stiffness has on
     # the stability of the explicit part of the SBDF.
     mu = 0
 
     # root locus: loop through theta.
-    imags = np.linspace(-1.5, 1.5, 500)
-    reals = np.linspace(-2.5, 0.5, 500)
+    imags = np.linspace(-4.5, 4.5, 500)
+    reals = np.linspace(-sr - 4, 1, 500)
     zs = np.zeros((500, 500))
 
     # Now, calculate the stability bound for a
@@ -22,7 +24,12 @@ def main():
 
             lbda = re + 1j*im
             if order == 1:
-                crit = abs((1 + lbda)/(1 - mu))
+                ynt = (1 + lbda) / (1 - mu)
+                ynp = 1 + (1/sr)*lbda + (1/sr)*mu*ynt
+                # Substep.
+                for _k in range(2, sr + 1):
+                    ynp = ynp*(1 + (1/sr)*lbda) + (1/sr)*mu*ynt
+                crit = (abs(1 + lbda*ynp)/(1 - mu))
                 zs[j, i] = crit
             elif order == 2:
                 a = 3/2 - mu
@@ -50,11 +57,11 @@ def main():
     plt.contourf(reals, imags, zs, levels=[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6,
                                            0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3,
                                            1.4, 1.5])
-    plt.title("SBDF Order {order} Maximum Amplification "
-              "Factor, Explicit Case".format(order=order))
+    plt.title("SBDF MR Order {order} Maximum Amplification "
+              "Factor, Explicit Case, SR = {sr}".format(order=order, sr=sr))
     plt.xlabel("Re(lambda)")
     plt.ylabel("Im(lambda)")
-    plt.colorbar(label="max(z)")
+    plt.colorbar(label="z")
     plt.contour(reals, imags, zs, levels=[0, 1], colors=['red'])
     plt.show()
 
