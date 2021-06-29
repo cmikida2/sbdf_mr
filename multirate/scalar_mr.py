@@ -2,30 +2,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def kaps_nonstiff(y, eps):
+def nonstiff(y, lbda):
 
-    # Kaps' first problem - nonstiff part.
-    dy = np.zeros(2)
-    dy[0] = -2*y[0]
-    dy[1] = y[0] - y[1] - y[1]*y[1]
+    dy = np.empty(1, dtype=complex)
+    dy = lbda*y
     return dy
 
 
-def kaps_stiff(y, eps):
+def stiff(y, mu):
 
-    # Kaps' first problem - stiff part.
-    einv = 1/eps
-    dy = np.zeros(2)
-    dy[0] = -einv*y[0] + einv*y[1]*y[1]
-    dy[1] = 0
+    dy = np.empty(1, dtype=complex)
+    dy = mu*y
     return dy
 
 
-def kaps_exact(t):
-    y_exact = np.zeros(2)
-    y_exact[1] = np.exp(-t)
-    y_exact[0] = y_exact[1]*y_exact[1]
-    return y_exact
+def exact(t, mu, lbda):
+    y = np.empty(1, dtype=complex)
+    y = np.exp((lbda+mu)*t)
+    return y
 
 
 def lagrange(t, hist, time_hist, order):
@@ -44,58 +38,91 @@ def lagrange(t, hist, time_hist, order):
     return a_new
 
 
-def imex_mr_bdf(y, h, t, eps, state_hist, rhs_hist, rhsns_hist,
-                time_hist, order, sr):
+def nonstiff_extrap(y, h, lbda, mu, rhsns_hist, state_hist, order,
+                    rhs_extrap):
+
+    # Return nonstiff RHS contribution to be used in implicit solve
+    if rhs_extrap is False:
+        # Option 1: use "prediction" value in BDF (state extrap)
+        # (for fractional steps, these are derived via Lagrange
+        # extrapolation)
+        if order == 1:
+            y_new = state_hist[0]
+        elif order == 2:
+            y_new = 2*state_hist[0] - state_hist[1]
+        elif order == 3:
+            y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
+        else:
+            y_new = 4*state_hist[0] - 6*state_hist[1] + \
+                    4*state_hist[2] - state_hist[3]
+
+        return h*nonstiff(y_new, lbda)
+    else:
+        # Option 2: use RHS histories instead, a la AB.
+        # (Since this is only done to obtain the final nonstiff
+        # RHS extrapolation, we know we will have a constant
+        # step size)
+        if order == 1:
+            a_new = rhsns_hist[0]
+        elif order == 2:
+            a_new = 2*rhsns_hist[0] - rhsns_hist[1]
+        elif order == 3:
+            a_new = 3*rhsns_hist[0] - 3*rhsns_hist[1] + rhsns_hist[2]
+        else:
+            a_new = 4*rhsns_hist[0] - 6*rhsns_hist[1] + \
+                    4*rhsns_hist[2] - rhsns_hist[3]
+
+        return h*a_new
+
+
+def stiff_interp(h, rhs_hist, order):
+
+    if order == 1:
+        rhs_new = rhs_hist[1] + (rhs_hist[0] - rhs_hist[1])*h
+    elif order == 2:
+        rhs_new = (rhs_hist[0]*h*((h+1)/2) + rhs_hist[1]*((h-1)/-1)*(h+1)
+                   + rhs_hist[2]*(h/-1)*((h-1)/-2))
+    elif order == 3:
+        rhs_new = (rhs_hist[0]*h*((h+1)/2)*((h+2)/3) +
+                   rhs_hist[1]*((h-1)/-1)*(h+1)*((h+2)/2) +
+                   rhs_hist[2]*(h/-1)*((h-1)/-2)*(h+2) +
+                   rhs_hist[3]*((h+1)/-1)*(h/-2)*((h-1)/-3))
+    else:
+        rhs_new = (rhs_hist[0]*h*((h+1)/2)*((h+2)/3)*((h+3)/4) +
+                   rhs_hist[1]*((h-1)/-1)*(h+1)*((h+2)/2)*((h+3)/3) +
+                   rhs_hist[2]*(h/-1)*((h-1)/-2)*(h+2)*((h+3)/2) +
+                   rhs_hist[3]*((h+1)/-1)*(h/-2)*((h-1)/-3)*(h+3) +
+                   rhs_hist[4]*((h+1)/-2)*(h/-3)*((h-1)/-4)*((h+2)/-1))
+
+    return rhs_new
+
+
+def imex_mr_bdf(y, h, t, lbda, mu, state_hist, rhs_hist,
+                rhsns_hist, time_hist, order, sr):
 
     # "Slowest first:" - first, use RHS extrapolation to form implicit
     # prediction, then solve.
     nonstiff_cont = h*lagrange(t + h, rhsns_hist, time_hist, order)
-    y_new = np.zeros(2)
-    einv = 1/eps
 
-    # Stiff contribution to y2 is zero, so we can do an implicit solve
-    # directly without any Newton nonsense...
+    # Solve.
     if order == 1:
-        y_new[1] = state_hist[0, 1] + nonstiff_cont[1]
-        y_new[0] = (1/(1 + h*einv))*(state_hist[0, 0] +
-                                     h*einv*y_new[1]*y_new[1] +
-                                     nonstiff_cont[0])
+        y_new = (nonstiff_cont + state_hist[0])/(1 - h*mu)
     elif order == 2:
-        y_new[1] = (4.0/3.0)*state_hist[0, 1] - (1.0/3.0)*state_hist[1, 1] + \
-                (2.0/3.0)*nonstiff_cont[1]
-        y_new[0] = (1/(1 + (2.0/3.0)*h*einv))*((4.0/3.0)*state_hist[0, 0] -
-                                               (1.0/3.0)*state_hist[1, 0] +
-                                               (2.0/3.0) * h * einv *
-                                               y_new[1]*y_new[1] +
-                                               (2.0/3.0)*nonstiff_cont[0])
+        y_new = ((2.0/3.0)*nonstiff_cont + (4.0/3.0)*state_hist[0]
+                 - (1.0/3.0)*state_hist[1])/(1 - (2.0/3.0)*h*mu)
     elif order == 3:
-        y_new[1] = (18.0/11.0)*state_hist[0, 1] - \
-                (9.0/11.0)*state_hist[1, 1] + \
-                (2.0/11.0)*state_hist[2, 1] + \
-                (6.0/11.0)*nonstiff_cont[1]
-        y_new[0] = (1/(1 + (6.0/11.0)*h*einv))*((18.0/11.0)*state_hist[0, 0] -
-                                                (9.0/11.0)*state_hist[1, 0] +
-                                                (2.0/11.0)*state_hist[2, 0] +
-                                                (6.0/11.0) * h * einv *
-                                                y_new[1]*y_new[1] +
-                                                (6.0/11.0)*nonstiff_cont[0])
+        y_new = ((6.0/11.0)*nonstiff_cont + (18.0/11.0)*state_hist[0]
+                 - (9.0/11.0)*state_hist[1] +
+                 (2.0/11.0)*state_hist[2])/(1 - (6.0/11.0)*h*mu)
     else:
-        y_new[1] = (48.0/25.0)*state_hist[0, 1] - \
-                (36.0/25.0)*state_hist[1, 1] + \
-                (16.0/25.0)*state_hist[2, 1] - \
-                (3.0/25.0)*state_hist[3, 1] + \
-                (12.0/25.0)*nonstiff_cont[1]
-        y_new[0] = (1/(1 + (12.0/25.0)*h*einv))*((48.0/25.0)*state_hist[0, 0] -
-                                                 (36.0/25.0)*state_hist[1, 0] +
-                                                 (16.0/25.0)*state_hist[2, 0] -
-                                                 (3.0/25.0)*state_hist[3, 0] +
-                                                 (12.0/25.0) * h * einv *
-                                                 y_new[1]*y_new[1] +
-                                                 (12.0/25.0)*nonstiff_cont[0])
+        y_new = ((12.0/25.0)*nonstiff_cont + (48.0/25.0)*state_hist[0]
+                 - (36.0/25.0)*state_hist[1] +
+                 (16.0/25.0)*state_hist[2] -
+                 (3.0/25.0)*state_hist[3])/(1 - (12.0/25.0)*h*mu)
 
     # Now do AB at the substep level, supplementing with interpolation of the
     # newfound stiff RHS.
-    new_stiff = kaps_stiff(y_new, eps)
+    new_stiff = stiff(y_new, mu)
 
     if sr > 1:
         # For the first substep, use existing RHS history...
@@ -108,7 +135,7 @@ def imex_mr_bdf(y, h, t, eps, state_hist, rhs_hist, rhsns_hist,
                                     substep_time_hist, substep_rhs_hist,
                                     substep_time_hist[0])
         # Now build a stiff RHS history so we can interpolate with it.
-        new_rhs_hist = np.zeros((order+1, 2))
+        new_rhs_hist = np.empty(order+1, dtype=complex)
         new_time_hist = np.zeros(order+1)
         for i in range(0, order):
             new_rhs_hist[i+1] = rhs_hist[i]
@@ -117,13 +144,11 @@ def imex_mr_bdf(y, h, t, eps, state_hist, rhs_hist, rhsns_hist,
         new_time_hist[0] = t + h
 
         for j in range(1, sr):
-            # Interpolate to obtain stiff RHS. Since we have gained a new
-            # "history" value from the initial implicit solve, we can use
-            # order + 1...but should we?
+            # Interpolate to obtain stiff RHS.
             stiff_rhs = lagrange(t + (j/sr)*h, new_rhs_hist, new_time_hist,
                                  order + 1)
             # Evaluate to obtain nonstiff RHS.
-            nonstiff_rhs = kaps_nonstiff(y_substep, eps)
+            nonstiff_rhs = nonstiff(y_substep, lbda)
             # Combine and rotate substep-level history and time history.
             # Rotate this into history.
             for i in range(order-1, 0, -1):
@@ -135,53 +160,27 @@ def imex_mr_bdf(y, h, t, eps, state_hist, rhs_hist, rhsns_hist,
                                         substep_time_hist, substep_rhs_hist,
                                         substep_time_hist[0])
 
-        new_nonstiff = kaps_nonstiff(y_substep, eps)
+        new_nonstiff = nonstiff(y_substep, lbda)
 
         # Re-solve.
         if order == 1:
-            y_new[1] = state_hist[0, 1] + new_nonstiff[1]*h
-            y_new[0] = (1/(1 + h*einv))*(state_hist[0, 0] +
-                                         h*einv*y_new[1]*y_new[1] +
-                                         new_nonstiff[0]*h)
+            y_new = (new_nonstiff*h + state_hist[0])/(1 - h*mu)
         elif order == 2:
-            y_new[1] = (4.0/3.0)*state_hist[0, 1] - \
-                    (1.0/3.0)*state_hist[1, 1] + \
-                    (2.0/3.0)*new_nonstiff[1]*h
-            y_new[0] = (1/(1 + (2.0/3.0)*h*einv))*((4.0/3.0)*state_hist[0, 0] -
-                                                   (1.0/3.0)*state_hist[1, 0] +
-                                                   (2.0/3.0) * h * einv *
-                                                   y_new[1]*y_new[1] +
-                                                   (2.0/3.0)*new_nonstiff[0]*h)
+            y_new = ((2.0/3.0)*new_nonstiff*h + (4.0/3.0)*state_hist[0]
+                     - (1.0/3.0)*state_hist[1])/(1 - (2.0/3.0)*h*mu)
         elif order == 3:
-            y_new[1] = (18.0/11.0)*state_hist[0, 1] - \
-                    (9.0/11.0)*state_hist[1, 1] + \
-                    (2.0/11.0)*state_hist[2, 1] + \
-                    (6.0/11.0)*new_nonstiff[1]*h
-            y_new[0] = (1/(1 + (6.0/11.0)*h*einv)) * \
-                ((18.0/11.0)*state_hist[0, 0] -
-                 (9.0/11.0)*state_hist[1, 0] +
-                 (2.0/11.0)*state_hist[2, 0] +
-                 (6.0/11.0) * h * einv *
-                 y_new[1]*y_new[1] +
-                 (6.0/11.0)*new_nonstiff[0]*h)
+            y_new = ((6.0/11.0)*new_nonstiff*h + (18.0/11.0)*state_hist[0]
+                     - (9.0/11.0)*state_hist[1] +
+                     (2.0/11.0)*state_hist[2])/(1 - (6.0/11.0)*h*mu)
         else:
-            y_new[1] = (48.0/25.0)*state_hist[0, 1] - \
-                    (36.0/25.0)*state_hist[1, 1] + \
-                    (16.0/25.0)*state_hist[2, 1] - \
-                    (3.0/25.0)*state_hist[3, 1] + \
-                    (12.0/25.0)*new_nonstiff[1]*h
-            y_new[0] = (1/(1 + (12.0/25.0)*h*einv)) * \
-                ((48.0/25.0)*state_hist[0, 0] -
-                 (36.0/25.0)*state_hist[1, 0] +
-                 (16.0/25.0)*state_hist[2, 0] -
-                 (3.0/25.0)*state_hist[3, 0] +
-                 (12.0/25.0) * h * einv *
-                 y_new[1]*y_new[1] +
-                 (12.0/25.0)*new_nonstiff[0]*h)
+            y_new = ((12.0/25.0)*new_nonstiff*h + (48.0/25.0)*state_hist[0]
+                     - (36.0/25.0)*state_hist[1] +
+                     (16.0/25.0)*state_hist[2] -
+                     (3.0/25.0)*state_hist[3])/(1 - (12.0/25.0)*h*mu)
 
-    new_stiff = kaps_stiff(y_new, eps)
+    new_stiff = stiff(y_new, mu)
     # FIXME: correction on nonstiff term?
-    new_nonstiff = kaps_nonstiff(y_new, eps)
+    new_nonstiff = nonstiff(y_new, lbda)
     return (y_new, new_nonstiff, new_stiff)
 
 
@@ -263,18 +262,26 @@ def plot_individual_run(dts, errors, sr):
 
 def main():
 
-    # Time integration of Kaps' problem to test
     # some new IMEX methods.
     t_start = 0
-    t_end = 1
+    # t_end = 1
+    t_end = 0.5
+    # t_end = 0.05
     dts = [0.05, 0.01, 0.005, 0.001]
-    orders = [1, 2, 3, 4]
-    # orders = [2]
+    # orders = [1, 2, 3, 4]
+    orders = [2]
     errors = np.zeros((4, 4))
     srs = [1, 2, 3, 4, 5]
     # srs = [1, 2]
     est_orders = np.zeros((4, 5))
-    eps = 0.001
+    # mu = 0  # explicit example
+    # lbda = -1  # explicit example
+    mu = -50  # stiff-controlled example
+    lbda = 0.5  # stiff-controlled example
+    # Kaps linearization eigenvalues:
+    # -1.00399812e+03 -1.00199410e+00
+    # mu = -1.00399812e+03 * 0.05  # experiment
+    # lbda = -1.00199410 * 0.05  # experiment
     plot_runs = False
 
     for sr_i, sr in enumerate(srs):
@@ -283,47 +290,52 @@ def main():
             eocrec = EOCRecorder()
             for k, dt in enumerate(dts):
 
-                y_old = np.zeros(2)
-                y_old[0] = 1
-                y_old[1] = 1
+                if order == 1:
+                    crit = abs((1 + lbda*dt)/(1 - mu*dt))
+                    print("Criteria: ", crit)
+                elif order == 2:
+                    a = 3/2 - mu*dt
+                    b = -(2*lbda*dt + 2)
+                    c = lbda*dt + 1/2
+                    crit1 = abs((-b + np.lib.scimath.sqrt(b**2 - 4*a*c))
+                                / (2*a))
+                    crit2 = abs((-b - np.lib.scimath.sqrt(b**2 - 4*a*c))
+                                / (2*a))
+                    print("Criteria: ", max(crit1, crit2))
+                y_old = 1
 
                 times = []
-                states0 = []
-                states0.append(y_old[0])
-                states1 = []
-                states1.append(y_old[1])
-                exact_states0 = []
-                exact_states1 = []
-                exact_states0.append(y_old[0])
-                exact_states1.append(y_old[1])
+                states = []
+                states.append(y_old)
+                exact_states = []
+                exact_states.append(y_old)
 
                 t = t_start
                 times.append(t)
                 step = 0
-                rhs_hist = np.empty((order, 2), dtype=y_old.dtype)
-                rhsns_hist = np.empty((order, 2), dtype=y_old.dtype)
-                state_hist = np.empty((order, 2), dtype=y_old.dtype)
+                rhs_hist = np.empty(order, dtype=complex)
+                rhsns_hist = np.empty(order, dtype=complex)
+                state_hist = np.empty(order, dtype=complex)
                 time_hist = np.empty(order)
-                rhs_hist[0] = kaps_stiff(y_old, eps)
-                rhsns_hist[0] = kaps_nonstiff(y_old, eps)
+                rhs_hist[0] = stiff(y_old, mu)
+                rhsns_hist[0] = nonstiff(y_old, lbda)
                 state_hist[0] = y_old
                 time_hist[0] = t
                 tiny = 1e-15
                 while t < t_end - tiny:
-                    if step < order - 1:
+                    if step < order-1:
                         # "Bootstrap" using known exact solution.
                         # Substep to fill fast/nonstiff rhs hist.
-                        y = kaps_exact(t + dt)
-                        dy_ns = kaps_nonstiff(y, eps)
-                        dy = kaps_stiff(y, eps)
+                        y = exact(t + dt, mu, lbda)
+                        dy_ns = nonstiff(y, lbda)
+                        dy = stiff(y, mu)
                     else:
                         # Step normally - we have all the history we need.
-                        y, dy_ns, dy = imex_mr_bdf(y_old, dt, t, eps,
+                        y, dy_ns, dy = imex_mr_bdf(y_old, dt, t, lbda, mu,
                                                    state_hist,
                                                    rhs_hist,
-                                                   rhsns_hist,
-                                                   time_hist, order,
-                                                   sr)
+                                                   rhsns_hist, time_hist,
+                                                   order, sr)
                     # Rotate histories.
                     for i in range(order-1, 0, -1):
                         rhs_hist[i] = rhs_hist[i-1]
@@ -335,13 +347,11 @@ def main():
                     state_hist[0] = y
                     time_hist[0] = t + dt
                     # Append to states and prepare for next step.
-                    states0.append(y[0])
-                    states1.append(y[1])
+                    states.append(y)
                     t += dt
                     times.append(t)
-                    ey = kaps_exact(t)
-                    exact_states0.append(ey[0])
-                    exact_states1.append(ey[1])
+                    ey = exact(t, mu, lbda)
+                    exact_states.append(ey)
                     y_old = y
                     step += 1
 
@@ -353,7 +363,7 @@ def main():
                 # plt.ylabel('y')
                 # plt.show()
 
-                errors[j, k] = np.linalg.norm(y - kaps_exact(t))
+                errors[j, k] = np.linalg.norm(y - exact(t, mu, lbda))
                 eocrec.add_data_point(dt, errors[j, k])
 
             print("------------------------------------------------------")

@@ -28,72 +28,28 @@ def kaps_exact(t):
     return y_exact
 
 
-def nonstiff_extrap(y, h, eps, rhsns_hist, state_hist, order, rhs_extrap,
-                    sr, subst_i):
+def lagrange(t, hist, time_hist, order):
 
-    # Return nonstiff RHS contribution to be used in implicit solve
-    if rhs_extrap is False:
-        # Option 1: use "prediction" value in BDF (state extrap)
-        # (for fractional steps, these are derived via Lagrange
-        # extrapolation)
-        if order == 1:
-            y_new = state_hist[0]
-        elif order == 2:
-            y_new = 2*state_hist[0] - state_hist[1]
-        elif order == 3:
-            y_new = 3*state_hist[0] - 3*state_hist[1] + state_hist[2]
-        else:
-            y_new = 4*state_hist[0] - 6*state_hist[1] + \
-                    4*state_hist[2] - state_hist[3]
+    # We use this routine to interpolate or extrapolate, given a history,
+    # an accompanying time history, and a new time at which to obtain a
+    # value.
+    a_new = 0
+    for i in range(0, order):
+        term = hist[i]
+        for j in range(0, order):
+            if i != j:
+                term = term*(t - time_hist[j])/(time_hist[i] - time_hist[j])
+        a_new += term
 
-        return h*kaps_nonstiff(y_new, eps)
-    else:
-        # Option 2: use RHS histories instead, a la AB.
-        # (Since this is only done to obtain the final nonstiff
-        # RHS extrapolation, we know we will have a constant
-        # step size)
-        if order == 1:
-            a_new = rhsns_hist[0]
-        elif order == 2:
-            a_new = 2*rhsns_hist[0] - rhsns_hist[1]
-        elif order == 3:
-            a_new = 3*rhsns_hist[0] - 3*rhsns_hist[1] + rhsns_hist[2]
-        else:
-            a_new = 4*rhsns_hist[0] - 6*rhsns_hist[1] + \
-                    4*rhsns_hist[2] - rhsns_hist[3]
-
-        return h*a_new
+    return a_new
 
 
-def stiff_interp(h, rhs_hist, order):
-
-    if order == 1:
-        rhs_new = rhs_hist[1] + (rhs_hist[0] - rhs_hist[1])*h
-    elif order == 2:
-        rhs_new = (rhs_hist[0]*h*((h+1)/2) + rhs_hist[1]*((h-1)/-1)*(h+1)
-                   + rhs_hist[2]*(h/-1)*((h-1)/-2))
-    elif order == 3:
-        rhs_new = (rhs_hist[0]*h*((h+1)/2)*((h+2)/3) +
-                   rhs_hist[1]*((h-1)/-1)*(h+1)*((h+2)/2) +
-                   rhs_hist[2]*(h/-1)*((h-1)/-2)*(h+2) +
-                   rhs_hist[3]*((h+1)/-1)*(h/-2)*((h-1)/-3))
-    else:
-        # FIXME: interpolation here is incorrect.
-        rhs_new = (rhs_hist[0]*h*((h+1)/2)*((h+2)/3)*((h+3)/4) +
-                   rhs_hist[1]*((h-1)/-1)*(h+1)*((h+2)/2)*((h+3)/3) +
-                   rhs_hist[2]*(h/-1)*((h-1)/-2)*(h+2)*((h+3)/2) +
-                   rhs_hist[3]*((h+1)/-1)*(h/-2)*((h-1)/-3)*(h+3) +
-                   rhs_hist[4]*((h+1)/-2)*(h/-3)*((h-1)/-4)*((h+2)/-1))
-
-    return rhs_new
-
-
-def imex_mr_bdf(y, h, t, eps, state_hist, rhs_hist, rhsns_hist, order, sr):
+def imex_mr_bdf(y, h, t, eps, state_hist, rhs_hist, rhsns_hist,
+                time_hist, order, sr):
 
     # "Slowest first:" - first, use RHS extrapolation to form implicit
     # prediction, then solve.
-    nonstiff_cont = nonstiff_extrap(y, h, eps, rhsns_hist, state_hist, order,
-                                    True, sr, sr)
+    nonstiff_cont = h*lagrange(t + h, rhsns_hist, time_hist, order)
     y_new = np.zeros(2)
     einv = 1/eps
 
@@ -153,13 +109,19 @@ def imex_mr_bdf(y, h, t, eps, state_hist, rhs_hist, rhsns_hist, order, sr):
                                     substep_time_hist[0])
         # Now build a stiff RHS history so we can interpolate with it.
         new_rhs_hist = np.zeros((order+1, 2))
+        new_time_hist = np.zeros(order+1)
         for i in range(0, order):
             new_rhs_hist[i+1] = rhs_hist[i]
+            new_time_hist[i+1] = time_hist[i]
         new_rhs_hist[0] = new_stiff
+        new_time_hist[0] = t + h
 
         for j in range(1, sr):
-            # Interpolate to obtain stiff RHS.
-            stiff_rhs = stiff_interp((j/sr), new_rhs_hist, order)
+            # Interpolate to obtain stiff RHS. Since we have gained a new
+            # "history" value from the initial implicit solve, we can use
+            # order + 1...but should we?
+            stiff_rhs = lagrange(t + (j/sr)*h, new_rhs_hist, new_time_hist,
+                                 order + 1)
             # Evaluate to obtain nonstiff RHS.
             nonstiff_rhs = kaps_nonstiff(y_substep, eps)
             # Combine and rotate substep-level history and time history.
@@ -307,10 +269,10 @@ def main():
     # dts = [0.05, 0.01, 0.005, 0.001]
     dts = [0.05]
     # orders = [1, 2, 3, 4]
-    orders = [4]
+    orders = [2]
     errors = np.zeros(5)
-    # srs = [1, 2, 3, 4, 5]
-    srs = [1, 5, 10, 50, 100]
+    srs = [1, 2, 3, 4, 5]
+    # srs = [1, 5, 10, 50, 100]
     # srs = [1, 2]
     eps = 0.001
 
@@ -337,13 +299,15 @@ def main():
                 step = 0
                 rhs_hist = np.empty((order, 2), dtype=y_old.dtype)
                 rhsns_hist = np.empty((order, 2), dtype=y_old.dtype)
-                state_hist = np.empty((order+1, 2), dtype=y_old.dtype)
+                state_hist = np.empty((order, 2), dtype=y_old.dtype)
+                time_hist = np.empty(order)
                 rhs_hist[0] = kaps_stiff(y_old, eps)
                 rhsns_hist[0] = kaps_nonstiff(y_old, eps)
                 state_hist[0] = y_old
+                time_hist[0] = t
                 tiny = 1e-15
                 while t < t_end - tiny:
-                    if step < order:
+                    if step < order - 1:
                         # "Bootstrap" using known exact solution.
                         # Substep to fill fast/nonstiff rhs hist.
                         y = kaps_exact(t + dt)
@@ -353,18 +317,19 @@ def main():
                         # Step normally - we have all the history we need.
                         y, dy_ns, dy = imex_mr_bdf(y_old, dt, t, eps,
                                                    state_hist,
-                                                   rhs_hist,
-                                                   rhsns_hist, order,
+                                                   rhs_hist, rhsns_hist,
+                                                   time_hist, order,
                                                    sr)
                     # Rotate histories.
                     for i in range(order-1, 0, -1):
                         rhs_hist[i] = rhs_hist[i-1]
                         rhsns_hist[i] = rhsns_hist[i-1]
-                    for i in range(order, 0, -1):
                         state_hist[i] = state_hist[i-1]
+                        time_hist[i] = time_hist[i-1]
                     rhs_hist[0] = dy
                     rhsns_hist[0] = dy_ns
                     state_hist[0] = y
+                    time_hist[0] = t + dt
                     # Append to states and prepare for next step.
                     states0.append(y[0])
                     states1.append(y[1])
@@ -384,7 +349,7 @@ def main():
     plt.plot(srs, errors, "g-")
     plt.xlabel("Step Ratio")
     plt.ylabel("Error Norm")
-    plt.title("MR-SBDF Errors, Kaps' Problem, Order {order}, dt = {dt}".format(
+    plt.title("MR-SBDF Error Norms, Kaps' Problem, Order {order}, dt = {dt}".format(
         order=order, dt=dt))
     plt.show()
 
